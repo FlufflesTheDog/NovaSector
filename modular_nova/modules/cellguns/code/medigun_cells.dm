@@ -16,10 +16,19 @@
 	icon_state = "blue_laser"
 	damage = 0
 	var/safety
+	var/requires_alive = TRUE
+
+/obj/projectile/energy/medical/proc/is_valid_target(atom/target)
+	var/mob/living/living_target = target
+	if(!istype(living_target))
+		return FALSE
+	if(requires_alive && living_target.stat == DEAD)
+		return FALSE
+	return TRUE
 
 /obj/projectile/energy/medical/on_hit(atom/target, blocked = 0, pierce_hit)
 	. = ..()
-	if(isliving(target))
+	if(is_valid_target(target))
 		cell_effect(target)
 
 /// The actual effects from getting blasted. No need to call parent.
@@ -183,14 +192,11 @@
 	pass_flags = UPGRADED_MEDICELL_PASSFLAGS
 	healing_amount = 30
 
-/*
-*	UTILITY CELLS
-*/
-
 //Utility basis
 /obj/projectile/energy/medical/utility
 	name = "utility medical shot"
 	pass_flags =  UPGRADED_MEDICELL_PASSFLAGS
+	requires_alive = FALSE
 
 //Clotting
 /obj/item/ammo_casing/energy/medical/utility/clotting
@@ -200,17 +206,12 @@
 
 /obj/projectile/energy/medical/utility/clotting
 	name = "clotting agent shot"
+	requires_alive = TRUE
 
-/obj/projectile/energy/medical/utility/clotting/on_hit(mob/living/target, blocked = 0, pierce_hit)
-	. = ..()
-//	if(!IsLivingHuman(target))
-//		return FALSE
-
+/obj/projectile/energy/medical/utility/clotting/cell_effect(mob/living/target)
 	if(target.reagents.get_reagent_amount(/datum/reagent/medicine/coagulant/fabricated) < 5) //injects the target with a weaker coagulant agent
 		target.reagents.add_reagent(/datum/reagent/medicine/coagulant/fabricated, 1)
 		target.reagents.add_reagent(/datum/reagent/iron, 2) //adds in iron to help compensate for the relatively weak blood clotting
-	else
-		return
 
 //Temprature Adjustment
 /obj/item/ammo_casing/energy/medical/utility/temperature
@@ -220,12 +221,9 @@
 
 /obj/projectile/energy/medical/utility/temperature
 	name = "temperature adjustment shot"
+	requires_alive = TRUE
 
-/obj/projectile/energy/medical/utility/temperature/on_hit(mob/living/target, blocked = 0, pierce_hit)
-	. = ..()
-//	if(!IsLivingHuman(target))
-//		return FALSE
-
+/obj/projectile/energy/medical/utility/temperature/cell_effect(mob/living/target)
 	var/ideal_temp = target.get_body_temp_normal(apply_change=FALSE) //Gets the temperature we should be aiming for.
 	var/current_temp = target.bodytemperature //Retrieves the targets body temperature
 	var/difference = ideal_temp - current_temp
@@ -244,15 +242,11 @@
 /obj/projectile/energy/medical/utility/gown
 	name = "hardlight surgical gown field"
 
-/obj/projectile/energy/medical/utility/gown/on_hit(mob/living/target, blocked = 0, pierce_hit)
-	. = ..()
-	if(!istype(target, /mob/living/carbon/human)) //Dead check isn't fully needed, since it'd be reasonable for this to work on corpses.
-		return
-
+/obj/projectile/energy/medical/utility/gown/cell_effect(mob/living/target)
 	var/mob/living/carbon/wearer = target
 	var/obj/item/clothing/gown = new /obj/item/clothing/suit/toggle/labcoat/hospitalgown/hardlight
 
-	if(wearer.equip_to_slot_if_possible(gown, ITEM_SLOT_OCLOTHING, 1, 1, 1))
+	if(wearer.equip_to_slot_if_possible(gown, ITEM_SLOT_OCLOTHING, qdel_on_fail = TRUE, disable_warning = TRUE))
 		wearer.visible_message(span_notice("The [gown] covers [wearer] body"), span_notice("The [gown] wraps around your body, covering you"))
 		return
 	else
@@ -272,18 +266,6 @@
 	embed_type = /datum/embed_data/salve_globule
 	damage = 0
 
-/datum/embed_data/salve_globule
-	embed_chance = 100
-	ignore_throwspeed_threshold = TRUE
-	pain_mult = 0
-	jostle_pain_mult = 0
-	fall_chance = 0
-
-/obj/projectile/energy/medical/utility/salve/on_hit(mob/living/target, blocked = 0, pierce_hit)
-//	if(!IsLivingHuman(target)) //No using this on the dead or synths.
-//		return FALSE
-	return ..()
-
 //Hardlight Rollerbed Medicell
 /obj/item/ammo_casing/energy/medical/utility/bed
 	projectile_type = /obj/projectile/energy/medical/utility/bed
@@ -293,12 +275,7 @@
 /obj/projectile/energy/medical/utility/bed
 	name = "hardlight bed field"
 
-/obj/projectile/energy/medical/utility/bed/on_hit(mob/living/target, blocked = 0, pierce_hit)
-	. = ..()
-
-	if(!istype(target, /mob/living/carbon/human)) //Only checks if they are human, it would make sense for this to work on the dead.
-		return FALSE
-
+/obj/projectile/energy/medical/utility/bed/cell_effect(mob/living/target)
 	for(var/obj/structure/bed/medical/medigun in target.loc) //Prevents multiple beds from being spawned on the same turf
 		return FALSE
 
@@ -320,17 +297,14 @@
 /obj/projectile/energy/medical/utility/body_teleporter
 	name = "bluespace transportation field"
 
-/obj/projectile/energy/medical/utility/body_teleporter/on_hit(mob/living/target, blocked = 0, pierce_hit)
-	. = ..()
+/obj/projectile/energy/medical/utility/body_teleporter/is_valid_target(atom/target)
+	var/mob/living/living_target = target
+	return istype(living_target) && living_target.stat == DEAD && !HAS_TRAIT(living_target, TRAIT_DEATHCOMA)
 
-	if(!ishuman(target) || (target.stat != DEAD && !HAS_TRAIT(target, TRAIT_DEATHCOMA)))
-		return FALSE
-
-	var/mob/living/carbon/body = target
-
-	teleport_effect(body.loc)
-	body.forceMove(firer.loc)
-	teleport_effect(body.loc)
+/obj/projectile/energy/medical/utility/body_teleporter/cell_effect(mob/living/target)
+	teleport_effect(target.loc)
+	target.forceMove(firer.loc)
+	teleport_effect(target.loc)
 
 	body.visible_message(span_notice("[body]'s body teleports to [firer]!"))
 
@@ -344,28 +318,24 @@
 	name = "hardlight hospital gown"
 	desc = "A hospital gown made out of hardlight - you can barely feel it on your body, especially with all the anesthetics."
 	greyscale_colors = "#B2D3CA#B2D3CA#B2D3CA#B2D3CA"
+	item_flags = DROPDEL
 
 /obj/item/clothing/suit/toggle/labcoat/hospitalgown/hardlight/dropped(mob/user)
 	. = ..()
-	var/mob/living/carbon/wearer = user
-
-	if((wearer.get_item_by_slot(ITEM_SLOT_OCLOTHING)) == src && !QDELETED(src))
-		to_chat(wearer, span_notice("The [src] disappeared after being removed"))
-		qdel(src)
-		return
+	to_chat(wearer, span_notice("The [src] disappeared after being removed"))
 
 //Salve Globule
 /obj/item/mending_globule/hardlight
 	name = "salve globule"
 	desc = "A ball of regenerative synthetic plant matter, contained within a soft hardlight field."
-	embed_type = /datum/embed_data/salve_globule
+	embed_type = /datum/embed_data/mending_globule/hardlight
 	icon = 'modular_nova/modules/cellguns/icons/obj/guns/mediguns/misc.dmi'
 	icon_state = "globule"
+	item_flags = DROPDEL
 	heals_left = 40 //This means it'll be heaing 15 damage per type max.
 
-/obj/item/mending_globule/hardlight/unembedded()
-	. = ..()
-	qdel(src)
+/datum/embed_data/mending_globule/hardlight
+	fall_chance = 0
 
 /obj/item/mending_globule/hardlight/process()
 	if(!bodypart)
@@ -375,7 +345,7 @@
 		qdel(src)
 		return FALSE
 
-	bodypart.heal_damage(0.25,0.25) //Reduced healing rate over original
+	bodypart.heal_damage(0.25, 0.25) //Reduced healing rate over original
 	heals_left--
 
 	if(heals_left <= 0)
@@ -458,14 +428,10 @@
 	grace_period = TRUE
 	access_teleporting = TRUE
 
-/obj/projectile/energy/medical/utility/relocation/on_hit(mob/living/target, blocked = 0, pierce_hit)
-	. = ..()
+/obj/projectile/energy/medical/utility/relocation/is_valid_target(atom/target)
+	return ishuman(target)
 
-	if(!ishuman(target))
-		return FALSE
-
-	var/mob/living/carbon/human/teleportee = target
-
+/obj/projectile/energy/medical/utility/relocation/cell_effect(mob/living/carbon/human/teleportee)
 	if(area_locked && length(teleport_areas) && !is_type_in_list(get_area(target), teleport_areas))
 		return FALSE
 
